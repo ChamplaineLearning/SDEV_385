@@ -1,0 +1,114 @@
+//Try running this code in your version of Linux. You may have to tweak some header files depending on the flavor you are using. 
+//When you run this program, think in terms of contexts, shared variables, speed and stability.
+#define _REENTRANT 
+
+#include "pthread.h"
+#include <stdio.h>
+#include <fcntl.h>
+#include <stdlib.h>
+
+#define MAX_THREADS 512
+#define READSIZE (16*512)
+static int num_threads;//Must be static to keep the values intact
+static size_t read_size;
+static pthread_t tid[MAX_THREADS]; 
+static pid_t pid[MAX_THREADS]; 
+
+void static threadmain(void)
+{
+    char buf[RSIZE];
+    int filedescriptor1, filedescriptor2;
+    int i;
+
+    sleep(1);
+    //Dev/zero is similar to /dev/null. It uses null characters. Both are bit buckets to send data to the afterlife 
+    //and return data a bit differently, but that is beyond this example.
+    filedescriptor1 = open("/dev/zero", O_RDONLY);
+    filedescriptor2 = open("/dev/null", O_WRONLY);
+    
+    //Let's try reading and writing to-from the bit buckets
+    for (i=0;i<read_size;i++) {
+        if (read(filedescriptor1, buf, READSIZE) != READSIZE) {
+            printf("read Error\n");
+            exit(1);
+        }
+        if (write(filedescriptor2, buf, READSIZE) != READSIZE) {
+            printf("write Error\n");
+            exit(1);
+        }
+    }
+    close(filedescriptor1);
+    close(filedescriptor2);
+}
+
+
+static void fork_test(void)
+{//WE will create some threads and see what happens when we call the file read/write function threadmain()
+    //Look at the speed at which the fork takes place. Is it efficient? What can you conclude?
+    int i;
+    time_t start = time(NULL);
+    
+    for (i=0;i < num_threads; i++) {
+        if ((pid[i] = fork()) == 0) {
+            threadmain();
+            _exit(0);
+        }
+        if (pid[i] == (pid_t)-1) {
+            printf("fork %d failed\n", i);
+            exit(1);
+        }
+    }
+    
+    for (i=0;i < num_threads; i++) {//Waitpid suspends the calling process until the child process listed has changed state.
+        waitpid(pid[i], NULL, 0);
+    }  
+    
+    printf("using fork took %d seconds\n", time(NULL) - start);
+}
+
+
+static void pthread_test(void)
+{
+    int i;
+    time_t start = time(NULL);
+    //pthread_create creates a new thread. Using NULL gives it default attributes. threadmain() is the start routine.
+    for (i=0;i < num_threads; i++) {
+        if (pthread_create(&tid[i], NULL, threadmain(), NULL) != 0) {
+            printf("Error creating threads\n");
+            exit(1);
+        }
+    }
+    
+    for (i=0;i < num_threads; i++) {
+        pthread_join(tid[i], NULL);//Suspends calling thread execution until the created thread is done
+    }
+    
+    printf("pthreads time: %d seconds\n", time(NULL) - start);
+}
+
+//Put here to avoid forward declare.
+int main(int argc, char *argv[]) 
+{
+    if (argc < 2) {
+        printf("%s number threads \n",argv[0]);
+        exit(1);
+    }
+    
+    num_threads = atoi(argv[1]);
+    read_size = atoi(argv[2]);
+    
+    if (num_threads > MAX_THREADS) {
+        printf("maximum threads value: %d\n", MAX_THREADS);
+        exit(1);
+    }
+    //Let's call them multiple times and see what happens!
+    fork_test();
+    pthread_test();
+    fork_test();
+    pthread_test();
+    fork_test();
+    pthread_test();
+    fork_test();
+    pthread_test();
+    printf("Finished!\n");
+}  
